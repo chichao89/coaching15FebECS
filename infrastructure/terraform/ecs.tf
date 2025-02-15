@@ -26,11 +26,19 @@ module "ecs" {
               protocol      = "tcp"
             }
           ]
+          log_configuration = {
+            log_driver = "awslogs"
+            options = {
+              awslogs-group         = data.aws_cloudwatch_log_group.ecs_log_group.name
+              awslogs-region        = data.aws_region.current.name
+              awslogs-stream-prefix = "ecs"
+            }
+          }
         }
       }
-      assign_public_ip     = true
-      subnet_ids           = [aws_subnet.public_subnet.id]  
-      security_group_ids   = [aws_security_group.ecs_sg.id]  
+      assign_public_ip   = true
+      subnet_ids         = [aws_subnet.public_subnet.id]  
+      security_group_ids = [aws_security_group.ecs_sg.id]  
     }
   }
 }
