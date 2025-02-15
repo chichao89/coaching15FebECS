@@ -1,0 +1,93 @@
+name: Deploy to ECS
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: ap-southeast-1
+  ECR_REPOSITORY: chichao-ecr
+  ECS_CLUSTER: chichao-ecs
+  ECS_SERVICE: chichao-task
+  TASK_DEF: chichao-task
+  CONTAINER_NAME: chichao-container
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step 2: Configure AWS credentials
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Step 3: Set up Terraform
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_version: 1.5.0
+
+      # Step 4: Initialize Terraform
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./infrastructure/terraform
+
+      # Step 5: Run Terraform Plan
+      - name: Terraform Plan
+        run: terraform plan
+        working-directory: ./infrastructure/terraform
+
+      # Step 6: Apply Terraform Changes
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+        working-directory: ./infrastructure/terraform
+
+      # Step 7: Log in to Amazon ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      # Step 8: Build and push Docker image to Amazon ECR
+      - name: Build and push Docker image to Amazon ECR
+        id: build-image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./applicationworkflow
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          platforms: linux/amd64
+          provenance: false
+
+      # Step 9: Download task definition
+      - name: Download task definition
+        run: |
+          aws ecs describe-task-definition --task-definition ${{ env.TASK_DEF }} --query taskDefinition > task-definition.json
+
+      # Step 10: Fill in the new image ID in the Amazon ECS task definition
+      - name: Fill in the new image ID in the Amazon ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+      # Step 11: Deploy Amazon ECS task definition
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
