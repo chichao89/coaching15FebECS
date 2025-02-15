@@ -33,7 +33,7 @@ module "ecs" {
          #     awslogs-region        = data.aws_region.current.name
          #     awslogs-stream-prefix = "ecs"
          #   }
-          }
+         # }
         }
       }
       assign_public_ip   = true
